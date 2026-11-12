@@ -1,0 +1,213 @@
+[
+ {
+  "name": "UTILITY_TYPE",
+  "source": "extract",
+  "type": "enum",
+  "desc": "The service actually billed: electricity (power, billed kWh) or water (cubic metres)",
+  "reject": "The issuer name alone; an unchecked service option; an unrelated zero water line",
+  "options": [
+   "electricity",
+   "water",
+   "other"
+  ]
+ },
+ {
+  "name": "BILLING_ID",
+  "source": "blank"
+ },
+ {
+  "name": "ACCT_NO",
+  "source": "blank"
+ },
+ {
+  "name": "ACCOUNT_NO",
+  "source": "extract",
+  "type": "str",
+  "desc": "Utility account number: Account No, Acct No, Account ID, Customer Account Number (CAN) in the utility account section",
+  "reject": "Bank or remittance account; Service ID / SIN; membership ID; premises unit number; invoice number"
+ },
+ {
+  "name": "INVOICE_NO",
+  "source": "extract",
+  "type": "str",
+  "desc": "Invoice number: Invoice No, Billing Invoice No, Bill No, the invoice's own serial number",
+  "reject": "Bill reference or statement number without invoice authority; revision suffix; Code No; issue date"
+ },
+ {
+  "name": "START_DATE",
+  "source": "extract",
+  "type": "date",
+  "desc": "Start of the billed service period: Period From, FROM cell of the service or reading period",
+  "reject": "Invoice or issue date; a presumed cycle start; another meter's period"
+ },
+ {
+  "name": "END_DATE",
+  "source": "extract",
+  "type": "date",
+  "desc": "End of the billed service period: Period To, TO cell; the present-reading date when no explicit period end exists",
+  "reject": "A numeric present reading; disconnection date; a conflicting period"
+ },
+ {
+  "name": "COVERAGE",
+  "source": "calc",
+  "desc": "Month of START_DATE; day 16 or later counts as the next month"
+ },
+ {
+  "name": "RECEIVED_DATE",
+  "source": "blank"
+ },
+ {
+  "name": "PROCESSED_DATE",
+  "source": "blank"
+ },
+ {
+  "name": "DUE_DATE",
+  "source": "extract",
+  "type": "date",
+  "desc": "Payment due date: Due Date, Payment Due Date, Pay on or before",
+  "reject": "Disconnection date; invoice date; posting date"
+ },
+ {
+  "name": "PREV_READING",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Previous meter reading: Previous Reading, Prev Rdg, PREVIOUS in the meter-reading table",
+  "reject": "Previous balance; previous consumption; the date of the previous reading"
+ },
+ {
+  "name": "CURRENT_READING",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Present meter reading: Present Reading, Current Reading, Pres Rdg, PRESENT in the meter-reading table",
+  "reject": "Current charges; the date of the present reading; a different meter's reading"
+ },
+ {
+  "name": "MULTIPLIER",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Meter multiplier: Multiplier, multiplying factor, explicit meter factor",
+  "reject": "A percentage; a monetary multiplication factor; never assume a default when none is printed"
+ },
+ {
+  "name": "CORELOSS",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Explicit core-loss quantity with its units (for example kWh)",
+  "reject": "Core-loss charge in money; a difference inferred from readings"
+ },
+ {
+  "name": "AVE_USAGE",
+  "source": "blank"
+ },
+ {
+  "name": "USAGE",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Billed or actual energy consumption for this bill in kWh: kWh Used, Actual Consumption, Billed kWh",
+  "reject": "Demand in kW; a meter reading; export credit; another period's usage; a quantity on an unrelated charge line"
+ },
+ {
+  "name": "DEMAND",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Printed billed demand quantity in kW, including an explicit zero",
+  "reject": "Demand charge in money; kWh usage; a minimum demand unless the bill says it is the billed demand"
+ },
+ {
+  "name": "MINDEMAND",
+  "source": "blank"
+ },
+ {
+  "name": "RATE",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Overall printed consumption tariff per kWh for the whole bill (for example 'Your rate this month')",
+  "reject": "Generation or transmission component tariff; VAT percentage; export rate; a conflicting tariff"
+ },
+ {
+  "name": "UTILITY",
+  "source": "calc",
+  "desc": "GRAND_TOTAL minus VAT_COST"
+ },
+ {
+  "name": "AIRCON",
+  "source": "blank"
+ },
+ {
+  "name": "ADJUSTMENT",
+  "source": "blank"
+ },
+ {
+  "name": "DISCOUNT_AMT",
+  "source": "blank"
+ },
+ {
+  "name": "COSTAVOIDANCE_AMT",
+  "source": "blank"
+ },
+ {
+  "name": "PENALTY",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Penalty or surcharge actually charged on this bill, including an explicit zero amount",
+  "reject": "A future late-payment rate; an amount payable only after the due date"
+ },
+ {
+  "name": "REFUND",
+  "source": "blank"
+ },
+ {
+  "name": "VAT_COST",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Total VAT amount of the current bill: printed total VAT, or the VAT Amount in the tax summary",
+  "reject": "VAT rate; VATable sales base; TIN; a government-tax subtotal; one VAT component of several"
+ },
+ {
+  "name": "EWT_COST",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Expanded withholding tax amount in money actually applied on this bill (EWT, WTAX, Expanded Withholding)",
+  "reject": "A rate alone; a Form 2307 number; a conditional deduction that was not applied"
+ },
+ {
+  "name": "GRAND_TOTAL",
+  "source": "extract",
+  "type": "decimal",
+  "desc": "Gross amount of the current bill only: Current Charges, Total Current Billing, Current Bill, Charges for this billing period",
+  "reject": "A total that includes arrears or a previous balance; a net amount after withholding; an after-due-date total"
+ },
+ {
+  "name": "NET_AMT",
+  "source": "calc",
+  "desc": "GRAND_TOTAL minus EWT_COST"
+ },
+ {
+  "name": "DATE_DEPOSITED",
+  "source": "blank"
+ },
+ {
+  "name": "EWT_TRANSMITTED",
+  "source": "blank"
+ },
+ {
+  "name": "COST_CENTER",
+  "source": "blank"
+ },
+ {
+  "name": "ADA",
+  "source": "blank"
+ },
+ {
+  "name": "HOLD",
+  "source": "blank"
+ },
+ {
+  "name": "REMARKS",
+  "source": "blank"
+ },
+ {
+  "name": "user_name",
+  "source": "blank"
+ }
+]

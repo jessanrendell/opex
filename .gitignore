@@ -1,0 +1,11 @@
+.claude
+.scratch
+CLAUDE.md
+AGENTS.md
+.env
+samples/
+out/
+memory.db
+.cache/
+.DS_Store
+__pycache__/

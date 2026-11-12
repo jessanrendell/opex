@@ -1,0 +1,21 @@
+[project]
+name = "opex"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Jessan Rendell Belenzo", email = "70411921+jessanrendell@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=3.2.0",
+    "pillow>=13.0.0",
+    "pymupdf>=2.1",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+opex = "opex:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"

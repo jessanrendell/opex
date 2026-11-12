@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>opex</title>
+<style>
+:root{color-scheme:light dark;--surface:#fcfcfb;--plane:#f9f9f7;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+  --series:#2a78d6;--border:rgba(11,11,11,.1);--good:#0ca30c;--warn:#fab219;--bad:#d03b3b}
+@media (prefers-color-scheme:dark){:root{--surface:#1a1a19;--plane:#0d0d0d;--ink:#f0efec;--ink2:#c3c2b7;--grid:#2c2c2a;--axis:#383835;
+  --series:#3987e5;--border:rgba(255,255,255,.1)}}
+body{margin:0;font:14px system-ui,sans-serif;background:var(--plane);color:var(--ink);display:grid;grid-template-rows:auto 1fr;height:100vh}
+header{padding:8px 12px;border-bottom:1px solid var(--axis)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.tile{position:relative;display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+.tile>div:first-child{width:210px;flex:none}
+.value{font-size:28px;font-weight:600}
+.tile svg{flex:1;min-width:0} svg text{font-size:11px;fill:var(--muted)}
+.tip{position:absolute;top:4px;background:var(--surface);border:1px solid var(--axis);border-radius:4px;padding:4px 8px;font-size:12px;white-space:pre;pointer-events:none}
+#app{display:grid;grid-template-columns:270px 1fr 470px;min-height:0}
+nav,main,aside{overflow:auto;padding:8px}
+nav{border-right:1px solid var(--axis)} aside{border-left:1px solid var(--axis);padding-bottom:0}
+nav button,.step{display:block;width:100%;box-sizing:border-box;text-align:left;border:0;background:none;color:inherit;padding:6px;cursor:pointer;font:inherit}
+[aria-current=true]{background:color-mix(in srgb,var(--series) 18%,transparent)}
+.tabs button[aria-pressed=true]{font-weight:600;border-bottom:2px solid var(--series)}
+.flag{background:#fde68a;color:#0b0b0b;border-radius:3px;padding:0 4px}
+.ok{color:light-dark(#006300,#0ca30c)}
+main img{max-width:100%;cursor:zoom-in;border:1px solid var(--grid)} main img.zoom{max-width:none;cursor:zoom-out}
+ol{list-style:none;margin:8px 0;padding:0} li{border-bottom:1px solid var(--grid)} details{padding:0 6px 6px;font-size:12px;color:var(--ink2)}
+aside{scroll-padding-bottom:260px} #boardBox{position:sticky;bottom:0;background:var(--plane);border-top:1px solid var(--axis);padding:6px 0}
+#board{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;margin:6px 0}
+.chip{border-left:3px solid var(--axis);padding-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.ok{border-color:var(--good);color:inherit} .chip.retry{border-color:var(--warn)} .chip.check{border-color:var(--bad)}
+.col{border-bottom:1px solid var(--grid);padding:6px 4px}
+.col.check{background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.col input{width:100%;box-sizing:border-box;margin-top:3px;font:inherit}
+.muted{color:var(--ink2);font-size:12px}
+#bar{position:sticky;bottom:0;background:var(--plane);padding:8px 0;border-top:1px solid var(--axis)}
+#status{white-space:pre-wrap;font-size:12px;margin-top:4px}
+</style>
+<header>
+  <div id="run" role="status">Loading...</div>
+  <div class="tiles">
+    <section class="tile"><div><div class="muted">Cost per invoice, average of the last 10</div><div class="value" id="costNow">-</div><div class="muted" id="costAll"></div></div>
+      <svg id="costChart" viewBox="0 0 480 96" role="img"></svg><div class="tip" id="costTip" hidden></div></section>
+    <section class="tile"><div><div class="muted">Time per invoice, average of the last 10</div><div class="value" id="timeNow">-</div><div class="muted" id="timeAll"></div></div>
+      <svg id="timeChart" viewBox="0 0 480 96" role="img"></svg><div class="tip" id="timeTip" hidden></div></section>
+  </div>
+</header>
+<div id="app">
+<nav><label><input type="checkbox" id="only"> flagged only</label><div id="list"></div></nav>
+<main><div id="head">Pick an invoice on the left.</div><img id="img" alt="invoice page" hidden></main>
+<aside>
+  <div class="tabs"><button id="tabSteps" aria-pressed="true">Steps</button> <button id="tabReview" aria-pressed="false">Review</button></div>
+  <div id="stepsPane"><button id="play" hidden>Play the steps</button><ol id="steps"></ol>
+    <div id="boardBox"><div class="muted" id="boardTitle"></div><div id="board"></div>
+    <div class="muted" id="legend" hidden>✓ passes the checks · ↻ will be read again · ! a person should check · ∅ empty · – not read yet. Hover a column for details.</div></div></div>
+  <div id="reviewPane" hidden><div id="cols"></div>
+    <div id="bar"><button id="save">Save</button> <label><input type="checkbox" id="learn" checked> Learn</label>
+    <button id="accept">Accept all</button><div id="status" role="status"></div></div></div>
+</aside>
+</div>
+<script>
+const $ = id => document.getElementById(id)
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids); return e }
+const NS = 'http://www.w3.org/2000/svg'
+const svgEl = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e }
+const WINDOW = 10  // invoices in the moving average
+let docs = [], cur = null, sheet = 0, tab = 'steps', sel = null, timer = null
+let offset = 0, loaded = false, run = {}, seg = {}, steps = {}, finished = []  // built from the run's event log
+
+// --- event log -> state ---
+
+function take(e) {
+  if (e.step === 'run_start') { run = {batch: e.batch, files: 0, done: 0}; seg = {}; steps = {}; finished = [] }
+  else if (e.step === 'file') { run.files++; for (const d of e.docs) seg[d.doc_id] = {...d, file: e.file} }
+  else if (e.step === 'segmented' || e.step === 'finished') run[e.step] = e
+  else {
+    const list = steps[e.doc_id] ||= [], last = list.at(-1)
+    if (last && last.step === e.step) Object.assign(last, e, {ts: last.ts, cost: last.cost})  // the result of a step that had started
+    else list.push(e)
+    if (e.step === 'done') { run.done++; if (e.cost != null) finished.push({id: e.doc_id, v: {cost: e.cost, time: e.seconds}, path: e.path}) }
+  }
+}
+
+async function poll() {
+  try {
+    const res = await (await fetch('/api/events?offset=' + offset)).json()
+    if (res.events.length || !loaded) {
+      offset = res.offset; loaded = true
+      const mine = cur && res.events.some(e => e.doc_id === cur.doc_id)
+      res.events.forEach(take)
+      await loadList(); drawTop()
+      if (cur && !cur.result && docs.some(d => d.doc_id === cur.doc_id && d.done)) { cur = await getDoc(cur.doc_id); draw() }
+      else if (mine && tab === 'steps') drawSteps()
+    }
+  } catch (e) {}  // the server stopped or a file is half-written: try again
+  setTimeout(poll, 1000)  // ponytail: polls every second for ever; stop after 'finished' if this page is ever served to many users
+}
+
+// --- header: run status and the two moving averages ---
+
+function drawTop() {
+  const rows = finished.length ? finished : docs.filter(d => d.cost != null).map(d => ({id: d.doc_id, v: {cost: d.cost, time: d.seconds}, path: d.path}))
+  const paths = {}
+  for (const r of rows) paths[r.path] = (paths[r.path] || 0) + 1
+  const s = run.segmented, f = run.finished
+  $('run').textContent = (f ? `Batch ${run.batch}: finished in ${f.summary.seconds} s.`
+    : s ? `Batch ${run.batch}: extracting. ${run.done} of ${s.invoices} invoices finished.`
+    : run.batch ? `Batch ${run.batch}: cutting files into invoices. ${run.files} files finished.`
+    : docs.length ? 'Finished batch without a step log (it ran before the log existed).' : 'No run in this folder yet. Start one with: opex run IN_DIR OUT_DIR')
+    + (s ? ` Segmentation took ${s.seconds} s and $${s.cost.toFixed(2)}; the numbers below do not include it.` : '')
+    + (rows.length ? ' Paths: ' + Object.entries(paths).map(([k, n]) => `${n} ${k}`).join(', ') + '.' : '')
+  chart('cost', rows, v => '$' + v.toFixed(4))
+  chart('time', rows, v => v.toFixed(1) + ' s')
+}
+
+function movingAverage(values, size) {
+  return values.map((_, i) => { const w = values.slice(Math.max(0, i + 1 - size), i + 1); return w.reduce((a, b) => a + b, 0) / w.length })
+}
+
+function chart(key, rows, fmt) {
+  const svg = $(key + 'Chart'), tip = $(key + 'Tip'), n = rows.length, vals = rows.map(r => r.v[key]), avg = movingAverage(vals, WINDOW)
+  $(key + 'Now').textContent = n ? fmt(avg[n - 1]) : '-'
+  $(key + 'All').textContent = n ? `All ${n} finished invoices: ${fmt(vals.reduce((a, b) => a + b, 0) / n)}` : 'No finished invoice yet'
+  svg.setAttribute('aria-label', n ? `Moving average over ${n} finished invoices, now ${fmt(avg[n - 1])}. Each invoice's own value is in the list on the left.` : 'No data yet')
+  svg.replaceChildren(); tip.hidden = true; svg.onpointermove = svg.onpointerleave = null
+  if (!n) return
+  const top = Math.max(...avg), unit = 10 ** Math.floor(Math.log10(top || 1)), max = Math.ceil(top / unit) * unit || 1
+  const X0 = 52, X1 = 470, Y0 = 8, Y1 = 72
+  const x = i => n === 1 ? X1 : X0 + (X1 - X0) * i / (n - 1), y = v => Y1 - (Y1 - Y0) * v / max
+  for (const t of [0, max / 2, max])
+    svg.append(svgEl('line', {x1: X0, x2: X1, y1: y(t), y2: y(t), stroke: t ? 'var(--grid)' : 'var(--axis)'}), svgEl('text', {x: X0 - 6, y: y(t) + 4, 'text-anchor': 'end'}, t ? fmt(t) : '0'))
+  const pts = avg.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const cross = svgEl('line', {y1: Y0, y2: Y1, stroke: 'var(--muted)', visibility: 'hidden'})
+  const dot = svgEl('circle', {r: 4, fill: 'var(--series)', stroke: 'var(--surface)', 'stroke-width': 2})
+  const at = i => { dot.setAttribute('cx', x(i)); dot.setAttribute('cy', y(avg[i])) }
+  at(n - 1)
+  svg.append(svgEl('polygon', {points: `${x(0)},${Y1} ${pts} ${x(n - 1)},${Y1}`, fill: 'var(--series)', opacity: .1}),
+    svgEl('polyline', {points: pts, fill: 'none', stroke: 'var(--series)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}),
+    svgEl('text', {x: X0, y: 90}, '1'), svgEl('text', {x: X1, y: 90, 'text-anchor': 'end'}, n),
+    svgEl('text', {x: (X0 + X1) / 2, y: 90, 'text-anchor': 'middle'}, 'finished invoices, in order'), cross, dot)
+  svg.onpointermove = e => {  // the crosshair snaps to the nearest invoice
+    const box = svg.getBoundingClientRect(), tile = svg.parentElement.getBoundingClientRect()
+    const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((e.clientX - box.left) * 480 / box.width - X0) / (X1 - X0) * (n - 1))))
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible'); at(i)
+    tip.textContent = `Invoice ${i + 1} of ${n}: ${rows[i].id}\nThis invoice: ${fmt(vals[i])}\nAverage of the last ${Math.min(WINDOW, i + 1)}: ${fmt(avg[i])}`
+    const left = e.clientX < box.left + box.width / 2
+    tip.style.left = left ? e.clientX - tile.left + 12 + 'px' : ''; tip.style.right = left ? '' : tile.right - e.clientX + 12 + 'px'
+    tip.hidden = false
+  }
+  svg.onpointerleave = () => { cross.setAttribute('visibility', 'hidden'); at(n - 1); tip.hidden = true }
+}
+
+// --- invoice list ---
+
+async function loadList() { docs = await (await fetch('/api/docs')).json(); drawList() }
+const getDoc = async id => (await fetch('/api/doc?id=' + encodeURIComponent(id))).json()
+
+function drawList() {
+  const rows = docs.map(d => {
+    const log = steps[d.doc_id] || [], end = log.find(e => e.step === 'done')
+    return {d, end, last: log.at(-1), flags: d.done ? d.flags : end ? end.flags.length : 0, cost: d.cost ?? end?.cost, seconds: d.seconds ?? end?.seconds}
+  })
+  $('list').replaceChildren(...rows.filter(r => !$('only').checked || r.flags).map(({d, end, last, flags, cost, seconds}) => {
+    const tag = d.error || end?.error ? 'error' : d.duplicate_of ? 'duplicate' : d.empty || end?.empty ? 'nothing read'
+      : d.done || end ? (flags ? flags + ' flags' : 'no flags') : last ? NAMES[last.step] + '...' : 'waiting'
+    const b = el('button', {onclick: () => show(d.doc_id)}, d.doc_id, el('br'), el('span', {className: flags ? 'flag' : 'muted'}, tag),
+      el('span', {className: 'muted'}, cost != null ? `  $${cost.toFixed(4)} · ${seconds} s` : ''),
+      d.reviewed ? el('span', {className: 'ok'}, d.learned ? '  reviewed, learned' : '  reviewed') : '')
+    b.setAttribute('aria-current', !!cur && cur.doc_id === d.doc_id)
+    return b
+  }))
+}
+
+async function show(id) {
+  cur = await getDoc(id)
+  sheet = 0; sel = null; stop(); $('status').textContent = ''; draw(); drawList()
+}
+
+function draw() {
+  const r = cur.result || {}
+  const nav = n => el('button', {onclick: () => { sheet = (sheet + n + cur.sheets) % cur.sheets; draw() }}, n < 0 ? '<' : '>')
+  $('head').replaceChildren(el('b', null, cur.doc_id), ` - ${cur.file} - sheet ${sheet + 1}/${cur.sheets} `, nav(-1), nav(1),
+    r.duplicate_of ? el('div', {className: 'flag'}, 'Duplicate of ' + r.duplicate_of) : '', r.error ? el('div', {className: 'flag'}, r.error) : '')
+  $('img').hidden = false; $('img').src = `/img?id=${encodeURIComponent(cur.doc_id)}&sheet=${sheet}`
+  $('tabSteps').setAttribute('aria-pressed', tab === 'steps'); $('tabReview').setAttribute('aria-pressed', tab === 'review')
+  $('stepsPane').hidden = tab !== 'steps'; $('reviewPane').hidden = tab !== 'review'
+  tab === 'steps' ? drawSteps() : drawReview()
+}
+
+// --- steps of one invoice ---
+
+const NAMES = {segment: 'Segment', fingerprint: 'Fingerprint', recall: 'Memory', route: 'Route', extract: 'Extract', verify: 'Verify', assess: 'Check',
+  zoom_decision: 'Zoom?', zoom: 'Zoom', calc: 'Calculate', done: 'Result', memory: 'Memory update'}
+const ICON = {none: '–', ok: '✓', retry: '↻', check: '!', empty: '∅'}
+const model = m => (m || '').includes('lite') ? 'Flash-Lite' : 'Flash'
+const TELL = {  // one step -> [what happened, detail lines]
+  segment: e => [`${e.file.split('/').pop()}: ${e.sheets.length} sheet${e.sheets.length > 1 ? 's' : ''}, `
+    + (e.sheets.every(s => s.has_text) ? 'with a text layer' : 'scanned, text transcribed by Flash-Lite')
+    + (e.sheets.some(s => s.split) ? ', cut out of a page that shows several sheets' : '') + '. Classified as an invoice.'],
+  fingerprint: e => [(e.template ? `Known layout #${e.template} (${e.vendor || 'supplier unknown'}): seen ${e.runs} times, ${e.ok_runs} without flags.`
+    : `New layout${e.vendor ? ' of the known supplier ' + e.vendor : ''}.`)
+    + (e.path === 'fast' ? ' Fast path: one Flash-Lite read with layout hints.' : ' Explore path: Jev picks the model.')],
+  recall: e => [`${e.facts.length} facts recalled from memory.`, e.facts.map(f => `[${f.source}] ${f.column}: ${f.text}`)],
+  route: e => [e.model ? `Jev: does this invoice need careful reading? P(yes) = ${e.p == null ? 'no answer' : e.p.toFixed(2)}, so ${model(e.model)} reads it.`
+    : 'Jev picks the model for the first read.'],
+  extract: e => [`${model(e.model)} reads ${e.cols.length} columns${e.hints ? ' with layout hints' : ''}${e.crops ? ` and ${e.crops} enlarged crops` : ''}.`, e.crops == null ? [] : e.cols],
+  verify: () => ['Jev guard: one yes/no question for each value that was read.'],
+  assess: e => {
+    const all = Object.entries(e.cols), bad = all.filter(([, d]) => d.retry)
+    return [`Checks in code: ${all.length - bad.length} columns pass, ${bad.length} do not.`, bad.map(([n, d]) => `${n} = ${d.value ?? '(empty)'}: ${d.reasons.join('; ') || 'low confidence'}`)]
+  },
+  zoom_decision: e => [e.zoom == null ? 'Should the hard page regions be enlarged before the next read?'
+    : `${e.used === 'jev' ? 'Jev' : 'Flash-Lite'} decided: ${e.zoom ? 'enlarge the hard regions' : 'read again without enlarging'}.`
+      + (e.jev != null ? ` Jev said ${e.jev ? 'yes' : 'no'} with confidence ${e.jev_conf.toFixed(2)}.` : '')],
+  zoom: e => [`Flash-Lite finds the page regions of ${e.cols.join(', ')}; they are enlarged 2x.`],
+  calc: e => ['Calculated in code: ' + Object.entries(e.cols).map(([n, d]) => `${n} = ${d.value ?? '(blank)'}`).join(', ') + '.'],
+  done: e => [e.error ? 'Failed: ' + e.error : (e.empty ? 'Nothing was read. ' : '') + (e.flags.length ? `${e.flags.length} columns for a person to check` : 'No flags')
+    + `. ${e.path} path, ${e.retries} more reads, $${e.cost.toFixed(4)}, ${e.seconds} s.`, e.flags],
+  memory: e => [`Layout #${e.template} saved as a run ${e.ok ? 'with no flags' : 'with flags'} on the columns it read.` + (e.duplicate_of ? ` Duplicate of ${e.duplicate_of}.` : '')
+    + (e.captions ? ` ${Object.keys(e.captions).length} captions proposed as supplier facts.` : ''), Object.entries(e.captions || {}).map(([n, l]) => `${n}: "${l}"`)],
+}
+const stepsOf = id => [...(seg[id] ? [{step: 'segment', ...seg[id]}] : []), ...(steps[id] || [])]
+const stop = () => { clearInterval(timer); timer = null }
+
+function drawSteps() {
+  const list = stepsOf(cur.doc_id), old = (cur.result || {}).steps || []
+  $('play').hidden = $('legend').hidden = !list.length
+  if (!list.length) {  // a batch from before the step log, or an invoice that waits for its turn
+    $('steps').replaceChildren(...old.map((s, i) => el('li', null, el('div', {className: 'step'}, `${i + 1}. ${s}`))))
+    $('boardTitle').textContent = old.length ? 'Short log only: this batch ran before the step log existed.' : 'No steps yet.'
+    return $('board').replaceChildren()
+  }
+  const k = sel == null ? list.length - 1 : Math.min(sel, list.length - 1), running = !list.some(e => e.step === 'done')
+  $('steps').replaceChildren(...list.map((e, i) => {
+    const next = list[i + 1], [text, more = []] = TELL[e.step](e)
+    const meta = next && e.ts && e.step !== 'done' ? `${(next.ts - e.ts).toFixed(1)} s` + (next.cost > e.cost ? ` · $${(next.cost - e.cost).toFixed(4)}` : '')
+      : !next && running && e.ts ? 'running...' : ''
+    const b = el('button', {className: 'step', onclick: () => { stop(); sel = i; drawSteps() }}, el('b', null, `${i + 1}. ${NAMES[e.step]}`), el('span', {className: 'muted'}, '  ' + meta), el('div', null, text))
+    b.setAttribute('aria-current', i === k)
+    return el('li', null, b, more.length ? el('details', null, el('summary', null, `${more.length} lines`), ...more.map(m => el('div', null, m))) : '')
+  }))
+  $('steps').children[k].scrollIntoView({block: 'nearest'})
+  // the columns as they stand after step k
+  const upto = list.slice(0, k + 1), read = list.find(e => e.step === 'extract'), seen = upto.findLast(e => e.step === 'assess')
+  const calc = upto.find(e => e.step === 'calc'), end = upto.find(e => e.step === 'done')
+  $('boardTitle').textContent = `Columns after step ${k + 1} (${NAMES[list[k].step]}):`
+  $('board').replaceChildren(...[...new Set([...(read ? read.cols : []), ...(calc ? Object.keys(calc.cols) : [])])].map(n => {
+    const d = calc?.cols[n] || seen?.cols[n]  // a calculated RATE replaces the one that was not read
+    const state = !d ? 'none' : end?.flags.includes(n) ? 'check' : d.retry ? 'retry' : d.value == null || d.value === '' ? 'empty' : 'ok'
+    return el('div', {className: 'chip ' + state, title: d ? [`${n} = ${d.value ?? '(empty)'}`, d.conf != null && `confidence ${d.conf}`, ...d.reasons].filter(Boolean).join('\n') : n + ': not read yet'},
+      `${ICON[state]} ${n} `, el('span', {className: 'muted'}, d?.value ?? ''))
+  }))
+}
+
+// --- review of one invoice ---
+
+function drawReview() {
+  const r = cur.result, rows = (cur.review || {}).rows || {}
+  $('bar').hidden = !r
+  if (!r) return $('cols').replaceChildren('The review opens when the run has written the result of this invoice (at the end of the run).')
+  const blank = [], items = []
+  for (const c of cur.columns) {
+    const d = (r.detail || {})[c.name]
+    if (!d) { blank.push(c.name); continue }
+    const used = r.values[c.name]
+    const box = el('div', {className: 'col' + (d.flag ? ' check' : '')},
+      el('b', null, c.name), ' ', used || (d.extracted ? `(blank; read "${d.extracted}" with low confidence)` : '(blank)'),
+      el('span', {className: 'muted'}, `  ${d.conf.toFixed(2)} `), d.flag ? el('span', {className: 'flag'}, 'CHECK') : '',
+      el('div', {className: 'muted'}, c.source === 'calc' ? 'calculated: ' + c.desc
+        : [d.label && `caption "${d.label}"`, d.raw && `printed "${d.raw}"`, d.sheet != null && `sheet ${d.sheet + 1}`].filter(Boolean).join(' - ')),
+      d.reasons.length ? el('div', {className: 'muted'}, d.reasons.join('; ')) : '')
+    if (c.source === 'extract') {
+      const row = rows[c.name] || {}
+      for (const [key, hint] of [['correct', 'correct value, or (blank)'], ['note', 'note for learning']]) {
+        const input = el('input', {value: row[key] || '', placeholder: hint})
+        input.dataset.col = c.name; input.dataset.key = key; input.setAttribute('aria-label', `${c.name} ${key}`)
+        box.append(input)
+      }
+    }
+    items.push(box)
+  }
+  items.push(el('div', {className: 'col muted'}, 'Always blank: ' + blank.join(', ')))
+  $('cols').replaceChildren(...items)
+}
+
+async function save(keepInputs) {
+  if (!cur || !cur.result) return
+  const rows = {}
+  if (keepInputs) for (const i of $('cols').querySelectorAll('input')) if (i.value.trim()) (rows[i.dataset.col] ||= {})[i.dataset.key] = i.value.trim()
+  const id = cur.doc_id, wantLearn = $('learn').checked
+  $('status').textContent = wantLearn ? 'Saving and learning...' : 'Saving...'
+  const res = await fetch('/api/save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({doc_id: id, rows, learn: wantLearn})})
+  const out = await res.json()
+  $('status').textContent = !res.ok ? 'Error: ' + out.error
+    : 'Saved ' + Object.keys(rows).length + ' corrections.' + (out.learn_error ? '\nLearning failed: ' + out.learn_error + '\nRun "opex learn" later.' : '')
+      + (out.facts ? '\nFacts written: ' + out.facts.length + out.facts.map(f => `\n- [${f.scope}] ${f.column}: ${f.text}`).join('') : '')
+  await loadList()
+  if (cur.doc_id === id) { cur = await getDoc(id); drawReview() }
+}
+
+$('only').onchange = drawList
+$('img').onclick = () => $('img').classList.toggle('zoom')
+$('tabSteps').onclick = () => { tab = 'steps'; if (cur) draw() }
+$('tabReview').onclick = () => { tab = 'review'; if (cur) draw() }
+$('play').onclick = () => {  // walk through the steps one at a time, then follow the newest step again
+  stop(); sel = 0; drawSteps()
+  timer = setInterval(() => { if (sel >= stepsOf(cur.doc_id).length - 1) { stop(); sel = null } else sel++; drawSteps() }, 900)
+}
+$('save').onclick = () => save(true)
+$('accept').onclick = () => save(false)
+poll()
+</script>
+</html>
